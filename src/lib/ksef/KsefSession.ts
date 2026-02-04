@@ -54,16 +54,16 @@ export class KsefSession {
 
             if (!response.ok) {
                 const text = await response.text();
-                console.error(`Status ${response.status}: ${text}`);
+                // console.error(`Status ${response.status}: ${text}`); // Optional log
                 throw new Error(`KSeF Error ${response.status}: ${text.substring(0, 200)}`);
             }
 
             return await response.json();
         } catch (error: any) {
             console.error("Fetch Error:", error.message);
-            // Check for specific "cause" if available
-            if (error.cause) console.error("Cause:", error.cause);
-            throw error;
+            // Enhance error message with cause if available
+            const cause = error.cause ? JSON.stringify(error.cause) : (error.code || 'Unknown');
+            throw new Error(`Fetch failed: ${error.message} (Cause: ${cause})`);
         }
     }
 

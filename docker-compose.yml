@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  ksef-monitor:
+    build: .
+    container_name: ksef-monitor
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - KSEF_NIP=${KSEF_NIP}
+      - KSEF_TOKEN=${KSEF_TOKEN}
+      - KSEF_ENV=${KSEF_ENV}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      # Optional Proxy (if needed even on VPS)
+      - KSEF_PROXY_URL=${KSEF_PROXY_URL}
+      # Cron schedule (handled by external cron or internal intervals if we add them later, 
+      # for now this runs the web server which responds to /api/check-invoices)

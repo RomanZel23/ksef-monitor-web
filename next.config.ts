@@ -14,4 +14,7 @@ export default withPWA({
   workboxOptions: {
     disableDevLogs: true,
   },
-})(nextConfig);
+})({
+  ...nextConfig,
+  output: 'standalone'
+});

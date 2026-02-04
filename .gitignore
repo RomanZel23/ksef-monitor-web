@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# PWA
+public/sw.js
+public/workbox-*.js
+public/swe-worker-*.js
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

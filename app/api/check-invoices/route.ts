@@ -7,11 +7,9 @@ export const dynamic = 'force-dynamic'; // No caching
 export async function GET() {
     try {
         const result = await KsefSyncService.runSync();
-        return NextResponse.json({ status: 'ok', data: result });
+        return NextResponse.json({ status: 'ok', version: '1.0.1-fetch', data: result });
     } catch (error: any) {
         console.error("Sync Error:", error.message);
-        return NextResponse.json({ status: 'error', message: error.message }, { status: 500 });
+        return NextResponse.json({ status: 'error', version: '1.0.1-fetch', message: error.message }, { status: 500 });
     }
 }
-
-

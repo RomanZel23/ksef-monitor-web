@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { Builder } from 'xml2js';
 import { KsefEncryption } from './KsefEncryption';
+import https from 'https';
 
 // Environments
 export const KSEF_ENV = {
@@ -16,18 +16,6 @@ interface AuthChallengeResponse {
     challenge: string;
 }
 
-interface SessionStatusResponse {
-    referenceNumber: string;
-    processingCode: number;
-    processingDescription: string;
-    timestamp: string;
-    sessionToken: SessionToken;
-}
-
-interface SessionToken {
-    token: string;
-    context: any;
-}
 
 export class KsefSession {
     private baseUrl: string;
@@ -39,27 +27,56 @@ export class KsefSession {
     }
 
     /**
+     * Helper for Fetch calls
+     */
+    private async call(endpoint: string, method: string, body?: any, headers: any = {}): Promise<any> {
+        const url = `${this.baseUrl}${endpoint}`;
+
+        console.log(`[${method}] ${url}`);
+
+        const defaultHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        };
+
+        const config: RequestInit = {
+            method,
+            headers: { ...defaultHeaders, ...headers },
+            body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
+            // Force node-fetch to respect connection rules?
+            // @ts-ignore
+            duplex: body ? 'half' : undefined
+        };
+
+        try {
+            const response = await fetch(url, config);
+
+            if (!response.ok) {
+                const text = await response.text();
+                console.error(`Status ${response.status}: ${text}`);
+                throw new Error(`KSeF Error ${response.status}: ${text.substring(0, 200)}`);
+            }
+
+            return await response.json();
+        } catch (error: any) {
+            console.error("Fetch Error:", error.message);
+            // Check for specific "cause" if available
+            if (error.cause) console.error("Cause:", error.cause);
+            throw error;
+        }
+    }
+
+    /**
      * Diagnostic: Check connectivity
      */
     async checkConnectivity(): Promise<boolean> {
         try {
-            // Public endpoint check - KSeF also exposes /online/Definition/PublicCredentials
-            const url = `${this.baseUrl}/online/Definition/PublicCredentials`;
-            console.log("Checking connectivity to:", url);
-            const response = await axios.get(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ksef-monitor-web/1.0',
-                    'Accept': 'application/json'
-                }
-            });
-            console.log("Connectivity OK. Status:", response.status);
+            const url = `/online/Definition/PublicCredentials`;
+            await this.call(url, 'GET');
             return true;
         } catch (e: any) {
             console.error("Connectivity Check Failed:", e.message);
-            if (e.response) {
-                console.error("Status:", e.response.status);
-                // console.error("Data:", JSON.stringify(e.response.data));
-            }
             return false;
         }
     }
@@ -68,34 +85,13 @@ export class KsefSession {
      * 1. Get Authorisation Challenge
      */
     async getChallenge(nip: string): Promise<AuthChallengeResponse> {
-        const url = `${this.baseUrl}/online/Session/AuthorisationChallenge?type=serial&identifier=${nip}`;
+        const url = `/online/Session/AuthorisationChallenge?type=serial&identifier=${nip}`;
+        const data = await this.call(url, 'POST', {});
 
-        try {
-            const response = await axios.post(url, {}, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ksef-monitor-web/1.0',
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-            });
-            // API returns: { timestamp: "...", challenge: "..." } wrapped in standard KSeF structure
-            // Example: { exception: { ... }, referenceNumber: "...", timestamp: "..." } 
-            // Actually standard success is: { timestamp: ISO, challenge: "..." } inside the root wrapper?
-            // KSeF JSONs are usually wrapped. Let's assume standard parsing.
-
-            const data = response.data;
-            if (!data.timestamp || !data.challenge) {
-                throw new Error('Invalid challenge response: ' + JSON.stringify(data));
-            }
-
-            return {
-                timestamp: data.timestamp,
-                challenge: data.challenge
-            };
-        } catch (error: any) {
-            console.error("KSeF Challenge Error:", error?.response?.data || error.message);
-            throw error;
+        if (!data.timestamp || !data.challenge) {
+            throw new Error('Invalid challenge response');
         }
+        return { timestamp: data.timestamp, challenge: data.challenge };
     }
 
     /**
@@ -112,24 +108,12 @@ export class KsefSession {
         const xml = this.buildInitSessionXML(nip, challenge, encryptedToken);
 
         // D. Call API
-        const url = `${this.baseUrl}/online/Session/InitToken`;
+        // Send as octet-stream
+        const responseData = await this.call('/online/Session/InitToken', 'POST', xml, {
+            'Content-Type': 'application/octet-stream'
+        });
 
-        // We must send the XML as bytes (octet-stream) or simple body
-        try {
-            const response = await axios.post(url, xml, {
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'Accept': 'application/json'
-                },
-                transformRequest: [(data) => data] // Prevent axios from stringifying if it tries
-            });
-
-            const sessionToken = response.data.sessionToken.token;
-            return sessionToken;
-        } catch (error: any) {
-            console.error("KSeF InitSession Error:", error?.response?.data || error.message);
-            throw new Error("Failed to initialize session: " + (error?.response?.data?.exception?.message || error.message));
-        }
+        return responseData.sessionToken.token;
     }
 
     private buildInitSessionXML(nip: string, challenge: string, encryptedToken: string): string {
@@ -168,8 +152,6 @@ export class KsefSession {
      * 3. Fetch Invoices (Sync Query)
      */
     async fetchInvoices(sessionToken: string, fromDate: Date, toDate: Date = new Date()): Promise<any[]> {
-        const url = `${this.baseUrl}/online/Query/Invoice/Sync?PageSize=100&PageOffset=0`;
-
         const payload = {
             queryCriteria: {
                 subjectType: "subject1",
@@ -180,23 +162,15 @@ export class KsefSession {
         };
 
         try {
-            const response = await axios.post(url, payload, {
-                headers: {
-                    'SessionToken': sessionToken,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
+            const data = await this.call('/online/Query/Invoice/Sync?PageSize=100&PageOffset=0', 'POST', payload, {
+                'SessionToken': sessionToken
             });
-
-            // Structure: { timestamp: "...", referenceNumber: "...", invoiceHeaderList: [ ... ] }
-            return response.data.invoiceHeaderList || [];
+            return data.invoiceHeaderList || [];
         } catch (error: any) {
-            console.error("KSeF FetchInvoices Error:", error?.response?.data || error.message);
-            // If error is 21104 (No results), return empty
-            if (error?.response?.data?.exception?.serviceCode === '21104' ||
-                error?.response?.data?.exception?.exceptionDetailList?.[0]?.exceptionCode === 21104) {
-                return [];
-            }
+            console.error("Fetch FetchInvoices Error:", error.message);
+            // Return empty on specific errors if needed
+            // checking message string logic here would be brittle but OK for now
+            if (error.message.includes("21104")) return [];
             throw error;
         }
     }

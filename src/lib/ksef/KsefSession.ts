@@ -3,6 +3,7 @@ import { Builder } from 'xml2js';
 import { KsefEncryption } from './KsefEncryption';
 import https from 'https';
 import crypto from 'crypto';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Environments
 export const KSEF_ENV = {
@@ -24,44 +25,63 @@ export class KsefSession {
         this.baseUrl = isProd ? KSEF_ENV.PROD : KSEF_ENV.TEST;
         this.builder = new Builder({ headless: true, renderOpts: { pretty: false } });
 
-        // Customize HTTPS Agent to bypass WAF
-        const httpsAgent = new https.Agent({
-            minVersion: 'TLSv1.2',
-            // Common browser ciphers
-            ciphers: [
-                'TLS_AES_128_GCM_SHA256',
-                'TLS_AES_256_GCM_SHA384',
-                'TLS_CHACHA20_POLY1305_SHA256',
-                'ECDHE-ECDSA-AES128-GCM-SHA256',
-                'ECDHE-RSA-AES128-GCM-SHA256',
-                'ECDHE-ECDSA-AES256-GCM-SHA384',
-                'ECDHE-RSA-AES256-GCM-SHA384',
-                'ECDHE-ECDSA-CHACHA20-POLY1305',
-                'ECDHE-RSA-CHACHA20-POLY1305',
-                'ECDHE-RSA-AES128-SHA',
-                'ECDHE-RSA-AES256-SHA',
-                'AES128-GCM-SHA256',
-                'AES256-GCM-SHA384',
-                'AES128-SHA',
-                'AES256-SHA'
-            ].join(':'),
-            keepAlive: true,
-            secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
-        });
+        const requestTimeout = 30000;
+        const proxyUrl = process.env.KSEF_PROXY_URL;
 
-        this.axiosInstance = axios.create({
-            baseURL: this.baseUrl,
-            httpsAgent: httpsAgent,
-            timeout: 30000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            }
-        });
+        // Define base headers
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        };
+
+        if (proxyUrl) {
+            console.log(`Using Proxy: ${proxyUrl.replace(/:[^:]*@/, ':***@')}`); // Log masked proxy
+
+            // When using Proxy, the Proxy Agent handles TLS
+            const httpsAgent = new HttpsProxyAgent(proxyUrl);
+
+            this.axiosInstance = axios.create({
+                baseURL: this.baseUrl,
+                httpsAgent: httpsAgent,
+                timeout: requestTimeout,
+                headers: headers
+            });
+        } else {
+            // Direct Connection with TLS Spoofing attempts
+            const httpsAgent = new https.Agent({
+                minVersion: 'TLSv1.2',
+                ciphers: [
+                    'TLS_AES_128_GCM_SHA256',
+                    'TLS_AES_256_GCM_SHA384',
+                    'TLS_CHACHA20_POLY1305_SHA256',
+                    'ECDHE-ECDSA-AES128-GCM-SHA256',
+                    'ECDHE-RSA-AES128-GCM-SHA256',
+                    'ECDHE-ECDSA-AES256-GCM-SHA384',
+                    'ECDHE-RSA-AES256-GCM-SHA384',
+                    'ECDHE-ECDSA-CHACHA20-POLY1305',
+                    'ECDHE-RSA-CHACHA20-POLY1305',
+                    'ECDHE-RSA-AES128-SHA',
+                    'ECDHE-RSA-AES256-SHA',
+                    'AES128-GCM-SHA256',
+                    'AES256-GCM-SHA384',
+                    'AES128-SHA',
+                    'AES256-SHA'
+                ].join(':'),
+                keepAlive: true,
+                secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
+            });
+
+            this.axiosInstance = axios.create({
+                baseURL: this.baseUrl,
+                httpsAgent: httpsAgent,
+                timeout: requestTimeout,
+                headers: headers
+            });
+        }
     }
 
     private async call(endpoint: string, method: string, body?: any, headers: any = {}): Promise<any> {

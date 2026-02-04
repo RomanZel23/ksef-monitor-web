@@ -12,6 +12,7 @@
     "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/supabase-js": "^2.94.1",
     "axios": "^1.13.4",
+    "https-proxy-agent": "^7.0.6",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

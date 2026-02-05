@@ -6,7 +6,11 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyM/x0/L1MhCAa+t8h+2K ... (truncated/
 
     // Test Public Key
     TEST: `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzW6x...` // Usually we fetch this from the API /api/online/Definition/PublicCredentials
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzW6x...`,
+
+    // Demo Public Key (Often same as Test or specific, placeholder for now)
+    DEMO: `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzW6x...`
 };
 
 // Better approach: Fetch standard keys if not provided

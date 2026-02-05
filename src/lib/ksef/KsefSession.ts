@@ -6,10 +6,14 @@ import crypto from 'crypto';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Environments
+// Environments
 export const KSEF_ENV = {
-    TEST: 'https://ksef-test.mf.gov.pl/api',
-    PROD: 'https://ksef.mf.gov.pl/api',
+    TEST: 'https://api-test.ksef.mf.gov.pl',
+    DEMO: 'https://api-demo.ksef.mf.gov.pl',
+    PROD: 'https://api.ksef.mf.gov.pl',
 };
+
+type KsefEnvName = keyof typeof KSEF_ENV;
 
 interface AuthChallengeResponse {
     timestamp: string;
@@ -21,8 +25,8 @@ export class KsefSession {
     private builder: Builder;
     private axiosInstance: any;
 
-    constructor(isProd: boolean = false) {
-        this.baseUrl = isProd ? KSEF_ENV.PROD : KSEF_ENV.TEST;
+    constructor(env: KsefEnvName = 'DEMO') {
+        this.baseUrl = KSEF_ENV[env];
         this.builder = new Builder({ headless: true, renderOpts: { pretty: false } });
 
         const requestTimeout = 30000;
@@ -50,29 +54,18 @@ export class KsefSession {
                 timeout: requestTimeout,
                 headers: headers
             });
+            this.axiosInstance = axios.create({
+                baseURL: this.baseUrl,
+                httpsAgent: httpsAgent,
+                timeout: requestTimeout,
+                headers: headers
+            });
         } else {
-            // Direct Connection with TLS Spoofing attempts
+            // Direct Connection: Use standard agent (Verified to work locally?)
+            // We revert the complex "TLS Spoofing" because it might be causing ECONNRESET itself
             const httpsAgent = new https.Agent({
-                minVersion: 'TLSv1.2',
-                ciphers: [
-                    'TLS_AES_128_GCM_SHA256',
-                    'TLS_AES_256_GCM_SHA384',
-                    'TLS_CHACHA20_POLY1305_SHA256',
-                    'ECDHE-ECDSA-AES128-GCM-SHA256',
-                    'ECDHE-RSA-AES128-GCM-SHA256',
-                    'ECDHE-ECDSA-AES256-GCM-SHA384',
-                    'ECDHE-RSA-AES256-GCM-SHA384',
-                    'ECDHE-ECDSA-CHACHA20-POLY1305',
-                    'ECDHE-RSA-CHACHA20-POLY1305',
-                    'ECDHE-RSA-AES128-SHA',
-                    'ECDHE-RSA-AES256-SHA',
-                    'AES128-GCM-SHA256',
-                    'AES256-GCM-SHA384',
-                    'AES128-SHA',
-                    'AES256-SHA'
-                ].join(':'),
                 keepAlive: true,
-                secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
+                // minVersion: 'TLSv1.2' // Optional
             });
 
             this.axiosInstance = axios.create({

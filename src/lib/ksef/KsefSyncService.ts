@@ -20,18 +20,23 @@ export class KsefSyncService {
         console.log(`Last sync: ${lastSyncDate.toISOString()}, Now: ${now.toISOString()}`);
 
         // 2. Credentials
+        // 2. Credentials
         const nip = process.env.KSEF_NIP;
         const token = process.env.KSEF_TOKEN;
-        const isProd = process.env.KSEF_ENV === 'PROD';
+        // Default to DEMO if not set
+        const envRaw = process.env.KSEF_ENV || 'DEMO';
+        const env = (['PROD', 'TEST', 'DEMO'].includes(envRaw) ? envRaw : 'DEMO') as 'PROD' | 'TEST' | 'DEMO';
+
         let publicKey = process.env.KSEF_PUBLIC_KEY;
         if (!publicKey) {
-            publicKey = isProd ? KSEF_KEYS.PROD : KSEF_KEYS.TEST;
+            // @ts-ignore
+            publicKey = KSEF_KEYS[env] || KSEF_KEYS.TEST;
         }
 
         if (!nip || !token) throw new Error("Missing Credentials");
 
         // 3. Login
-        const session = new KsefSession(isProd);
+        const session = new KsefSession(env);
         // Check connectivity first? Optional optimization.
 
         const sessionToken = await session.initSession(nip, token, publicKey);

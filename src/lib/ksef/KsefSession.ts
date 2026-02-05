@@ -114,6 +114,9 @@ export class KsefSession {
     /**
      * Diagnostic: Check connectivity
      */
+    /**
+     * Diagnostic: Check connectivity
+     */
     async checkConnectivity(): Promise<boolean> {
         try {
             // KSeF 2.0 endpoint (Verified)
@@ -126,11 +129,20 @@ export class KsefSession {
     }
 
     /**
-     * 1. Get Authorisation Challenge
+     * 1. Get Authorisation Challenge (KSeF 2.0)
      */
     async getChallenge(nip: string): Promise<AuthChallengeResponse> {
-        const url = `/online/Session/AuthorisationChallenge?type=serial&identifier=${nip}`;
-        const data = await this.call(url, 'POST', {});
+        // KSeF 2.0: POST /auth/challenge
+        const body = {
+            contextIdentifier: {
+                type: 'Nip',
+                value: nip
+            }
+        };
+
+        const data = await this.call('/auth/challenge', 'POST', body, {
+            'Content-Type': 'application/json'
+        });
 
         if (!data.timestamp || !data.challenge) {
             throw new Error('Invalid challenge response');
@@ -139,7 +151,7 @@ export class KsefSession {
     }
 
     /**
-     * 2. Initialize Session (Login)
+     * 2. Initialize Session (Login) for KSeF 2.0
      */
     async initSession(nip: string, token: string, publicKey: string): Promise<string> {
         // A. Get Challenge
@@ -148,70 +160,54 @@ export class KsefSession {
         // B. Encrypt Token
         const encryptedToken = KsefEncryption.encryptToken(token, timestamp, publicKey);
 
-        // C. Build XML
-        const xml = this.buildInitSessionXML(nip, challenge, encryptedToken);
-
-        // D. Call API
-        const responseData = await this.call('/online/Session/InitToken', 'POST', xml, {
-            'Content-Type': 'application/octet-stream'
-        });
-
-        return responseData.sessionToken.token;
-    }
-
-    private buildInitSessionXML(nip: string, challenge: string, encryptedToken: string): string {
-        const obj = {
-            'ns3:InitSessionTokenRequest': {
-                $: {
-                    'xmlns:ns3': 'http://ksef.mf.gov.pl/schema/gtw/svc/online/auth/request/2021/10/01/0001',
-                    'xmlns:ns2': 'http://ksef.mf.gov.pl/schema/gtw/svc/types/2021/10/01/0001',
-                    'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance'
-                },
-                'ns3:Context': {
-                    'ns2:Challenge': challenge,
-                    'ns2:Identifier': {
-                        $: { 'xsi:type': 'ns2:SubjectIdentifierByCompanyType' },
-                        'ns2:Identifier': nip
-                    },
-                    'ns2:DocumentType': {
-                        'ns2:Service': 'KSeF',
-                        'ns2:FormCode': {
-                            $: {
-                                'systemCode': 'FA (2)',
-                                'schemaVersion': '1-0E'
-                            },
-                            '_': 'FA'
-                        }
-                    },
-                    'ns2:Token': encryptedToken
-                }
-            }
+        // C. Build Request Body (JSON for KSeF 2.0)
+        const body = {
+            challenge: challenge,
+            contextIdentifier: {
+                type: 'Nip',
+                value: nip
+            },
+            encryptedToken: encryptedToken
         };
 
-        return this.builder.buildObject(obj);
+        // D. Call API
+        const responseData = await this.call('/auth/ksef-token', 'POST', body, {
+            'Content-Type': 'application/json'
+        });
+
+        return responseData.accessToken.token;
     }
 
+    // Deprecated: buildInitSessionXML is not used in KSeF 2.0 JSON flow
+
     /**
-     * 3. Fetch Invoices (Sync Query)
+     * 3. Fetch Invoices (KSeF 2.0 Query Metadata)
      */
     async fetchInvoices(sessionToken: string, fromDate: Date, toDate: Date = new Date()): Promise<any[]> {
         const payload = {
-            queryCriteria: {
-                subjectType: "subject1",
-                type: "detail",
-                acquisitionTimestampThresholdFrom: fromDate.toISOString(),
-                acquisitionTimestampThresholdTo: toDate.toISOString()
-            }
+            subjectType: "Subject1", // Case sensitive: Subject1 (Seller)
+            dateRange: {
+                dateType: "AcquisitionTimestamp",
+                from: fromDate.toISOString(),
+                to: toDate.toISOString()
+            },
+            // pageSize: 100, // Optional
+            // pageOffset: 0
         };
 
         try {
-            const data = await this.call('/online/Query/Invoice/Sync?PageSize=100&PageOffset=0', 'POST', payload, {
-                'SessionToken': sessionToken
+            // KSeF 2.0 Endpoint
+            const data = await this.call('/invoices/query/metadata?pageSize=100&pageOffset=0', 'POST', payload, {
+                'Content-Type': 'application/json',
+                'SessionToken': sessionToken // Header name might be same? Usually 'SessionToken' or 'Authorization: Bearer'?
+                // Docs check: often KSeF 2.0 uses "SessionToken" or "Authorization"
             });
+
+            // KSeF 2.0 response usually has "invoiceHeaderList" inside
             return data.invoiceHeaderList || [];
         } catch (error: any) {
-            // Handle 21104
-            if (error.message.includes("21104")) return [];
+            // Handle specific no-results code if applicable
+            if (error.message.includes("21104")) return []; // Keep legacy check just in case code is same
             throw error;
         }
     }

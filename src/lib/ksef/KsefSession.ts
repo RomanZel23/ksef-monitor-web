@@ -116,7 +116,8 @@ export class KsefSession {
      */
     async checkConnectivity(): Promise<boolean> {
         try {
-            await this.call('/online/Definition/PublicCredentials', 'GET');
+            // KSeF 2.0 endpoint (Verified)
+            await this.call('/v2/security/public-key-certificates', 'GET');
             return true;
         } catch (e: any) {
             console.error("Connectivity Check Failed:", e.message);
